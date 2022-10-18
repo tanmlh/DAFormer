@@ -1,4 +1,4 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 """Modified from https://github.com/open-
 mmlab/mmdetection/blob/master/tools/analysis_tools/analyze_logs.py."""
 import argparse

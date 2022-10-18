@@ -1,4 +1,4 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from experiments import generate_experiment_cfgs
 from mmcv import Config, get_logger
 from prettytable import PrettyTable
 
-from mmseg.models import build_segmentor
+from daseg.models import build_segmentor
 
 
 def human_format(num):
@@ -46,7 +46,7 @@ if __name__ == '__main__':
         help='Experiment id as defined in experiment.py',
     )
     args = parser.parse_args()
-    get_logger('mmseg', log_level=logging.ERROR)
+    get_logger('daseg', log_level=logging.ERROR)
     cfgs = generate_experiment_cfgs(args.exp)
     for cfg in cfgs:
         with open('configs/tmp_param.json', 'w') as f:

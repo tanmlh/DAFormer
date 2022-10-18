@@ -1,4 +1,4 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 # Modifications: Modification of config and checkpoint to support legacy models
 
 import argparse
@@ -11,9 +11,9 @@ from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 from mmcv.utils import DictAction
 
-from mmseg.apis import multi_gpu_test, single_gpu_test
-from mmseg.datasets import build_dataloader, build_dataset
-from mmseg.models import build_segmentor
+from daseg.apis import multi_gpu_test, single_gpu_test
+from daseg.datasets import build_dataloader, build_dataset
+from daseg.models import build_segmentor
 
 
 def update_legacy_cfg(cfg):
@@ -30,7 +30,7 @@ def update_legacy_cfg(cfg):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='mmseg test (and eval) a model')
+        description='daseg test (and eval) a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument(

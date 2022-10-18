@@ -1,4 +1,4 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 # Modifications:
 # - Config and checkpoint update
 # - Saving instead of showing prediction
@@ -9,8 +9,8 @@ from argparse import ArgumentParser
 import mmcv
 from tools.test import update_legacy_cfg
 
-from mmseg.apis import inference_segmentor, init_segmentor
-from mmseg.core.evaluation import get_classes, get_palette
+from daseg.apis import inference_segmentor, init_segmentor
+from daseg.core.evaluation import get_classes, get_palette
 
 
 def main():

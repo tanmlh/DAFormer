@@ -1,10 +1,10 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 
 import argparse
 
 from mmcv import Config, DictAction
 
-from mmseg.apis import init_segmentor
+from daseg.apis import init_segmentor
 
 
 def parse_args():

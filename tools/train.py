@@ -1,4 +1,4 @@
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 # Modifications:
 # - Provide args as argument to main()
 # - Snapshot source code
@@ -16,12 +16,12 @@ import torch
 from mmcv.runner import init_dist
 from mmcv.utils import Config, DictAction, get_git_hash
 
-from mmseg import __version__
-from mmseg.apis import set_random_seed, train_segmentor
-from mmseg.datasets import build_dataset
-from mmseg.models.builder import build_train_model
-from mmseg.utils import collect_env, get_root_logger
-from mmseg.utils.collect_env import gen_code_archive
+from daseg import __version__
+from daseg.apis import set_random_seed, train_segmentor
+from daseg.datasets import build_dataset
+from daseg.models.builder import build_train_model
+from daseg.utils import collect_env, get_root_logger
+from daseg.utils.collect_env import gen_code_archive
 
 
 def parse_args(args):
@@ -152,10 +152,10 @@ def main(args):
         val_dataset.pipeline = cfg.data.train.pipeline
         datasets.append(build_dataset(val_dataset))
     if cfg.checkpoint_config is not None:
-        # save mmseg version, config file content and class names in
+        # save daseg version, config file content and class names in
         # checkpoints as meta data
         cfg.checkpoint_config.meta = dict(
-            mmseg_version=f'{__version__}+{get_git_hash()[:7]}',
+            daseg_version=f'{__version__}+{get_git_hash()[:7]}',
             config=cfg.pretty_text,
             CLASSES=datasets[0].CLASSES,
             PALETTE=datasets[0].PALETTE)

@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # ---------------------------------------------------------------
 
-# Obtained from: https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
 # Modifications: Add class stats computation
 
 import argparse

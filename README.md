@@ -288,22 +288,22 @@ The checkpoints come with the training logs. Please note that:
 
 ## Framework Structure
 
-This project is based on [mmsegmentation version 0.16.0](https://github.com/open-mmlab/mmsegmentation/tree/v0.16.0).
+This project is based on [dasegmentation version 0.16.0](https://github.com/open-mmlab/dasegmentation/tree/v0.16.0).
 For more information about the framework structure and the config system,
-please refer to the [mmsegmentation documentation](https://mmsegmentation.readthedocs.io/en/latest/index.html)
+please refer to the [dasegmentation documentation](https://dasegmentation.readthedocs.io/en/latest/index.html)
 and the [mmcv documentation](https://mmcv.readthedocs.ihttps://arxiv.org/abs/2007.08702o/en/v1.3.7/index.html).
 
 The most relevant files for DAFormer are:
 
 * [configs/daformer/gta2cs_uda_warm_fdthings_rcs_croppl_a999_daformer_mitb5_s0.py](configs/daformer/gta2cs_uda_warm_fdthings_rcs_croppl_a999_daformer_mitb5_s0.py):
   Annotated config file for the final DAFormer.
-* [mmseg/models/uda/dacs.py](mmseg/models/uda/dacs.py):
+* [daseg/models/uda/dacs.py](daseg/models/uda/dacs.py):
   Implementation of UDA self-training with ImageNet Feature Distance.
-* [mmseg/datasets/uda_dataset.py](mmseg/datasets/uda_dataset.py):
+* [daseg/datasets/uda_dataset.py](daseg/datasets/uda_dataset.py):
   Data loader for UDA with Rare Class Sampling.
-* [mmseg/models/decode_heads/daformer_head.py](mmseg/models/decode_heads/daformer_head.py):
+* [daseg/models/decode_heads/daformer_head.py](daseg/models/decode_heads/daformer_head.py):
   Implementation of DAFormer decoder with context-aware feature fusion.
-* [mmseg/models/backbones/mix_transformer.py](mmseg/models/backbones/mix_transformer.py):
+* [daseg/models/backbones/mix_transformer.py](daseg/models/backbones/mix_transformer.py):
   Implementation of Mix Transformer encoder (MiT).
 
 ## Acknowledgements
@@ -311,7 +311,7 @@ The most relevant files for DAFormer are:
 This project is based on the following open-source projects. We thank their
 authors for making the source code publically available.
 
-* [MMSegmentation](https://github.com/open-mmlab/mmsegmentation)
+* [MMSegmentation](https://github.com/open-mmlab/dasegmentation)
 * [SegFormer](https://github.com/NVlabs/SegFormer)
 * [DACS](https://github.com/vikolss/DACS)
 

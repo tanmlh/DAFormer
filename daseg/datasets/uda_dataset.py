@@ -5,6 +5,7 @@
 
 import json
 import os.path as osp
+import pdb
 
 import mmcv
 import numpy as np
@@ -36,6 +37,7 @@ def get_rcs_class_probs(data_root, temperature):
     freq = 1 - freq
     freq = torch.softmax(freq / temperature, dim=-1)
 
+
     return list(overall_class_stats.keys()), freq.numpy()
 
 
@@ -48,6 +50,7 @@ class UDADataset(object):
         self.ignore_index = target.ignore_index
         self.CLASSES = target.CLASSES
         self.PALETTE = target.PALETTE
+        self.path2name = cfg.get('path2name', False)
         assert target.ignore_index == source.ignore_index
         assert target.CLASSES == source.CLASSES
         assert target.PALETTE == source.PALETTE
@@ -59,14 +62,13 @@ class UDADataset(object):
             self.rcs_min_crop_ratio = rcs_cfg['min_crop_ratio']
             self.rcs_min_pixels = rcs_cfg['min_pixels']
 
-            self.rcs_classes, self.rcs_classprob = get_rcs_class_probs(
-                cfg['source']['data_root'], self.rcs_class_temp)
+            data_root = cfg['source']['data_root'] if not 'rcs_root' in cfg['source'] else cfg['source']['rcs_root']
+            self.rcs_classes, self.rcs_classprob = get_rcs_class_probs(data_root, self.rcs_class_temp)
             mmcv.print_log(f'RCS Classes: {self.rcs_classes}', 'daseg')
             mmcv.print_log(f'RCS ClassProb: {self.rcs_classprob}', 'daseg')
 
             with open(
-                    osp.join(cfg['source']['data_root'],
-                             'samples_with_class.json'), 'r') as of:
+                    osp.join(data_root, 'samples_with_class.json'), 'r') as of:
                 samples_with_class_and_n = json.load(of)
             samples_with_class_and_n = {
                 int(k): v
@@ -83,7 +85,8 @@ class UDADataset(object):
             self.file_to_idx = {}
             for i, dic in enumerate(self.source.img_infos):
                 file = dic['ann']['seg_map']
-                if isinstance(self.source, CityscapesDataset):
+                # if isinstance(self.source, CityscapesDataset):
+                if self.path2name:
                     file = file.split('/')[-1]
                 self.file_to_idx[file] = i
 

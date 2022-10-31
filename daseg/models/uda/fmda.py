@@ -20,9 +20,11 @@ import torch
 from matplotlib import pyplot as plt
 from timm.models.layers import DropPath
 from torch.nn.modules.dropout import _DropoutNd
+import torch.nn as nn
+import torch.nn.functional as F
 
 from daseg.core import add_prefix
-from daseg.models import UDA, build_segmentor
+from daseg.models import UDA, build_segmentor, builder
 from daseg.models.uda.uda_decorator import UDADecorator, get_module
 from daseg.models.utils.dacs_transforms import (denorm, get_class_masks,
                                                 get_mean_std, strong_transform)
@@ -51,10 +53,10 @@ def calc_grad_magnitude(grads, norm_type=2.0):
 
 
 @UDA.register_module()
-class DACS(UDADecorator):
+class FMDA(UDADecorator):
 
     def __init__(self, **cfg):
-        super(DACS, self).__init__(**cfg)
+        super(FMDA, self).__init__(**cfg)
         self.local_iter = 0
         self.max_iters = cfg['max_iters']
         self.alpha = cfg['alpha']
@@ -71,6 +73,7 @@ class DACS(UDADecorator):
         self.color_jitter_p = cfg['color_jitter_probability']
         self.debug_img_interval = cfg['debug_img_interval']
         self.print_grad_magnitude = cfg['print_grad_magnitude']
+        self.trg_loss_weight = cfg.get('trg_loss_weight', 1.)
         assert self.mix == 'class'
 
         self.debug_fdist_mask = None
@@ -84,6 +87,13 @@ class DACS(UDADecorator):
             self.imnet_model = build_segmentor(deepcopy(cfg['model']))
         else:
             self.imnet_model = None
+
+        aux_losses = cfg['aux_losses']
+        if not type(aux_losses) == list:
+            aux_losses = [aux_losses]
+
+        aux_losses = [builder.build_loss(loss) for loss in aux_losses]
+        self.aux_losses = nn.ModuleList(aux_losses)
 
     def get_ema_model(self):
         return get_module(self.ema_model)
@@ -143,12 +153,15 @@ class DACS(UDADecorator):
         """
 
         optimizer.zero_grad()
-        log_vars = self(**data_batch)
+        log_vars, vis_states = self(**data_batch)
         optimizer.step()
 
         log_vars.pop('loss', None)  # remove the unnecessary 'loss'
         outputs = dict(
-            log_vars=log_vars, num_samples=len(data_batch['img_metas']))
+            log_vars=log_vars,
+            num_samples=len(data_batch['img_metas']),
+            states=vis_states
+        )
         return outputs
 
     def masked_feat_dist(self, f1, f2, mask=None):
@@ -207,6 +220,7 @@ class DACS(UDADecorator):
             dict[str, Tensor]: a dictionary of loss components
         """
         log_vars = {}
+        total_loss = 0
         batch_size = img.shape[0]
         dev = img.device
 
@@ -233,11 +247,14 @@ class DACS(UDADecorator):
 
         # Train on source images
         clean_losses = self.get_model().forward_train(
-            img, img_metas, gt_semantic_seg, return_feat=True)
+            img, img_metas, gt_semantic_seg, return_feat=True, return_logits=True)
         src_feat = clean_losses.pop('features')
+
+        src_logits = clean_losses.pop('decode.logits')
         clean_loss, clean_log_vars = self._parse_losses(clean_losses)
         log_vars.update(clean_log_vars)
-        clean_loss.backward(retain_graph=self.enable_fdist)
+        # clean_loss.backward(retain_graph=self.enable_fdist)
+        total_loss += clean_loss
         if self.print_grad_magnitude:
             params = self.get_model().backbone.parameters()
             seg_grads = [
@@ -250,7 +267,8 @@ class DACS(UDADecorator):
         if self.enable_fdist:
             feat_loss, feat_log = self.calc_feat_dist(img, gt_semantic_seg,
                                                       src_feat)
-            feat_loss.backward()
+            # feat_loss.backward()
+            total_loss += feat_loss
             log_vars.update(add_prefix(feat_log, 'src'))
             if self.print_grad_magnitude:
                 params = self.get_model().backbone.parameters()
@@ -267,8 +285,11 @@ class DACS(UDADecorator):
                 m.training = False
             if isinstance(m, DropPath):
                 m.training = False
-        ema_logits = self.get_ema_model().encode_decode(
-            target_img, target_img_metas)
+        # ema_logits = self.get_ema_model().encode_decode(
+        #     target_img, target_img_metas)
+        ema_logits, ema_feats = self.get_ema_model().encode_decode(
+            target_img, target_img_metas, return_feats=True)
+
 
         ema_softmax = torch.softmax(ema_logits.detach(), dim=1)
         pseudo_prob, pseudo_label = torch.max(ema_softmax, dim=1)
@@ -288,91 +309,90 @@ class DACS(UDADecorator):
         gt_pixel_weight = torch.ones((pseudo_weight.shape), device=dev)
 
         # Apply mixing
-        mixed_img, mixed_lbl = [None] * batch_size, [None] * batch_size
-        mix_masks = get_class_masks(gt_semantic_seg)
+        # mixed_img, mixed_lbl = [None] * batch_size, [None] * batch_size
+        # mix_masks = get_class_masks(gt_semantic_seg)
 
-        for i in range(batch_size):
-            strong_parameters['mix'] = mix_masks[i]
-            mixed_img[i], mixed_lbl[i] = strong_transform(
-                strong_parameters,
-                data=torch.stack((img[i], target_img[i])),
-                target=torch.stack((gt_semantic_seg[i][0], pseudo_label[i])))
-            _, pseudo_weight[i] = strong_transform(
-                strong_parameters,
-                target=torch.stack((gt_pixel_weight[i], pseudo_weight[i])))
-        mixed_img = torch.cat(mixed_img)
-        mixed_lbl = torch.cat(mixed_lbl)
+        # for i in range(batch_size):
+        #     strong_parameters['mix'] = mix_masks[i]
+        #     mixed_img[i], mixed_lbl[i] = strong_transform(
+        #         strong_parameters,
+        #         data=torch.stack((img[i], target_img[i])),
+        #         target=torch.stack((gt_semantic_seg[i][0], pseudo_label[i])))
+        #     _, pseudo_weight[i] = strong_transform(
+        #         strong_parameters,
+        #         target=torch.stack((gt_pixel_weight[i], pseudo_weight[i])))
+        # mixed_img = torch.cat(mixed_img)
+        # mixed_lbl = torch.cat(mixed_lbl)
+
 
         # Train on mixed images
-        mix_losses = self.get_model().forward_train(
-            mixed_img, img_metas, mixed_lbl, pseudo_weight, return_feat=True)
-        mix_losses.pop('features')
-        mix_losses = add_prefix(mix_losses, 'mix')
-        mix_loss, mix_log_vars = self._parse_losses(mix_losses)
-        log_vars.update(mix_log_vars)
-        mix_loss.backward()
+        # mix_losses = self.get_model().forward_train(
+        #     mixed_img, img_metas, mixed_lbl, pseudo_weight, return_feat=True)
+        # mix_losses.pop('features')
+        # mix_losses = add_prefix(mix_losses, 'mix')
+        # mix_loss, mix_log_vars = self._parse_losses(mix_losses)
+        # log_vars.update(mix_log_vars)
+        # mix_loss.backward()
 
-        if self.local_iter % self.debug_img_interval == 0:
-            out_dir = os.path.join(self.train_cfg['work_dir'],
-                                   'class_mix_debug')
-            os.makedirs(out_dir, exist_ok=True)
-            vis_img = torch.clamp(denorm(img, means, stds), 0, 1)
-            vis_trg_img = torch.clamp(denorm(target_img, means, stds), 0, 1)
-            vis_mixed_img = torch.clamp(denorm(mixed_img, means, stds), 0, 1)
-            for j in range(batch_size):
-                rows, cols = 2, 5
-                fig, axs = plt.subplots(
-                    rows,
-                    cols,
-                    figsize=(3 * cols, 3 * rows),
-                    gridspec_kw={
-                        'hspace': 0.1,
-                        'wspace': 0,
-                        'top': 0.95,
-                        'bottom': 0,
-                        'right': 1,
-                        'left': 0
-                    },
-                )
-                subplotimg(axs[0][0], vis_img[j], 'Source Image')
-                subplotimg(axs[1][0], vis_trg_img[j], 'Target Image')
-                subplotimg(
-                    axs[0][1],
-                    gt_semantic_seg[j],
-                    'Source Seg GT',
-                    cmap='cityscapes')
-                subplotimg(
-                    axs[1][1],
-                    pseudo_label[j],
-                    'Target Seg (Pseudo) GT',
-                    cmap='cityscapes')
-                subplotimg(axs[0][2], vis_mixed_img[j], 'Mixed Image')
-                subplotimg(
-                    axs[1][2], mix_masks[j][0], 'Domain Mask', cmap='gray')
-                # subplotimg(axs[0][3], pred_u_s[j], "Seg Pred",
-                #            cmap="cityscapes")
-                subplotimg(
-                    axs[1][3], mixed_lbl[j], 'Seg Targ', cmap='cityscapes')
-                subplotimg(
-                    axs[0][3], pseudo_weight[j], 'Pseudo W.', vmin=0, vmax=1)
-                if self.debug_fdist_mask is not None:
-                    subplotimg(
-                        axs[0][4],
-                        self.debug_fdist_mask[j][0],
-                        'FDist Mask',
-                        cmap='gray')
-                if self.debug_gt_rescale is not None:
-                    subplotimg(
-                        axs[1][4],
-                        self.debug_gt_rescale[j],
-                        'Scaled GT',
-                        cmap='cityscapes')
-                for ax in axs.flat:
-                    ax.axis('off')
-                plt.savefig(
-                    os.path.join(out_dir,
-                                 f'{(self.local_iter + 1):06d}_{j}.png'))
-                plt.close()
+        aug_trg_img, aug_trg_lbl = [None] * batch_size, [None] * batch_size
+        for i in range(batch_size):
+            aug_trg_img[i], aug_trg_lbl[i] = strong_transform(
+                strong_parameters,
+                data=target_img[i:i+1],
+                target=pseudo_label[i:i+1])
+        aug_trg_img = torch.cat(aug_trg_img)
+        aug_trg_lbl = torch.cat(aug_trg_lbl).unsqueeze(1)
+
+        trg_losses = self.get_model().forward_train(
+            aug_trg_img, target_img_metas, aug_trg_lbl, pseudo_weight, return_feat=True, return_logits=True)
+        trg_logits = trg_losses.pop('decode.logits')
+        trg_feats = trg_losses.pop('features')
+        trg_losses = add_prefix(trg_losses, 'trg')
+        trg_loss, trg_log_vars = self._parse_losses(trg_losses)
+        log_vars.update(trg_log_vars)
+        total_loss += trg_loss * self.trg_loss_weight
+
+        tensors = dict(
+            img_src=img,
+            img_src_metas=img_metas,
+            img_trg=target_img,
+            img_metas_trg=target_img_metas,
+            gt_src=gt_semantic_seg,
+            x_src=src_feat,
+            x_ema=ema_feats,
+            x_trg = trg_feats,
+            logits_src=src_logits,
+            logits_trg=trg_logits
+        )
+        aux_losses = self._get_aux_losses(tensors=tensors)
+        vis_states = {name: value for name, value in aux_losses.items() if name.startswith('vis|')}
+        for name in vis_states.keys(): aux_losses.pop(name)
+
+        aux_losses, aux_log_vars = self._parse_losses(aux_losses)
+        log_vars.update(aux_log_vars)
+        # aux_losses.backward()
+
+        total_loss += aux_losses
+        total_loss.backward()
+
+        vis_states.update({
+            'vis|seg_mask_src': (img, gt_semantic_seg, src_logits.max(dim=1)[1].unsqueeze(1)),
+            'vis|seg_mask_trg': (target_img, aug_trg_lbl, trg_logits.max(dim=1)[1].unsqueeze(1)),
+            'vis|density_pseudo': (target_img, pseudo_weight.unsqueeze(1))
+        })
+
         self.local_iter += 1
 
-        return log_vars
+        return log_vars, vis_states
+
+    def _get_aux_losses(self, tensors):
+
+        aux_losses = dict()
+        for loss_module in self.aux_losses:
+            loss_ = loss_module(tensors)
+            if loss_ is None:
+                continue
+            aux_losses.update(loss_)
+
+
+        return aux_losses

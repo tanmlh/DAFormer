@@ -1,0 +1,1 @@
+python tools/train.py configs/da_season_net/fmda_mixed_deeplabv3plus_r50_warm_croppl_a999_ada_season_net_sp2fa.py

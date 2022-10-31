@@ -6,11 +6,14 @@ import kornia
 import numpy as np
 import torch
 import torch.nn as nn
+import pdb
+import torch.nn.functional as F
 
 
 def strong_transform(param, data=None, target=None):
     assert ((data is not None) or (target is not None))
-    data, target = one_mix(mask=param['mix'], data=data, target=target)
+    if 'mix' in param:
+        data, target = one_mix(mask=param['mix'], data=data, target=target)
     data, target = color_jitter(
         color_jitter=param['color_jitter'],
         s=param['color_jitter_s'],
@@ -114,6 +117,10 @@ def one_mix(mask, data=None, target=None):
         data = (stackedMask0 * data[0] +
                 (1 - stackedMask0) * data[1]).unsqueeze(0)
     if not (target is None):
+        H, W = mask.shape[-2:]
+        h, w = target.shape[-2:]
+        if h != H or w != W:
+            target = F.interpolate(target, (H, W))
         stackedMask0, _ = torch.broadcast_tensors(mask[0], target[0])
         target = (stackedMask0 * target[0] +
                   (1 - stackedMask0) * target[1]).unsqueeze(0)

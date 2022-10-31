@@ -4,5 +4,7 @@
 # ---------------------------------------------------------------
 
 from daseg.models.uda.dacs import DACS
+from daseg.models.uda.fmda import FMDA
+from daseg.models.uda.fmda_mix import FMDAMix
 
-__all__ = ['DACS']
+__all__ = ['DACS', 'FMDA', 'FMDAMix']

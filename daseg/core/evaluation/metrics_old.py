@@ -1,4 +1,5 @@
-# Copyright (c) OpenMMLab. All rights reserved.
+# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
+
 from collections import OrderedDict
 
 import mmcv
@@ -7,7 +8,7 @@ import torch
 
 
 def f_score(precision, recall, beta=1):
-    """calculate the f-score value.
+    """calcuate the f-score value.
 
     Args:
         precision (float | torch.Tensor): The precision value.
@@ -40,7 +41,7 @@ def intersect_and_union(pred_label,
         ignore_index (int): Index that will be ignored in evaluation.
         label_map (dict): Mapping old labels to new labels. The parameter will
             work only when label is str. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. The parameter will
+        reduce_zero_label (bool): Wether ignore zero label. The parameter will
             work only when label is str. Default: False.
 
      Returns:
@@ -97,12 +98,12 @@ def total_intersect_and_union(results,
     Args:
         results (list[ndarray] | list[str]): List of prediction segmentation
             maps or list of prediction result filenames.
-        gt_seg_maps (list[ndarray] | list[str] | Iterables): list of ground
-            truth segmentation maps or list of label filenames.
+        gt_seg_maps (list[ndarray] | list[str]): list of ground truth
+            segmentation maps or list of label filenames.
         num_classes (int): Number of categories.
         ignore_index (int): Index that will be ignored in evaluation.
         label_map (dict): Mapping old labels to new labels. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. Default: False.
+        reduce_zero_label (bool): Wether ignore zero label. Default: False.
 
      Returns:
          ndarray: The intersection of prediction and ground truth histogram
@@ -112,14 +113,16 @@ def total_intersect_and_union(results,
          ndarray: The prediction histogram on all classes.
          ndarray: The ground truth histogram on all classes.
     """
+    num_imgs = len(results)
+    assert len(gt_seg_maps) == num_imgs
     total_area_intersect = torch.zeros((num_classes, ), dtype=torch.float64)
     total_area_union = torch.zeros((num_classes, ), dtype=torch.float64)
     total_area_pred_label = torch.zeros((num_classes, ), dtype=torch.float64)
     total_area_label = torch.zeros((num_classes, ), dtype=torch.float64)
-    for result, gt_seg_map in zip(results, gt_seg_maps):
+    for i in range(num_imgs):
         area_intersect, area_union, area_pred_label, area_label = \
             intersect_and_union(
-                result, gt_seg_map, num_classes, ignore_index,
+                results[i], gt_seg_maps[i], num_classes, ignore_index,
                 label_map, reduce_zero_label)
         total_area_intersect += area_intersect
         total_area_union += area_union
@@ -148,7 +151,7 @@ def mean_iou(results,
         nan_to_num (int, optional): If specified, NaN values will be replaced
             by the numbers defined by the user. Default: None.
         label_map (dict): Mapping old labels to new labels. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. Default: False.
+        reduce_zero_label (bool): Wether ignore zero label. Default: False.
 
      Returns:
         dict[str, float | ndarray]:
@@ -187,7 +190,7 @@ def mean_dice(results,
         nan_to_num (int, optional): If specified, NaN values will be replaced
             by the numbers defined by the user. Default: None.
         label_map (dict): Mapping old labels to new labels. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. Default: False.
+        reduce_zero_label (bool): Wether ignore zero label. Default: False.
 
      Returns:
         dict[str, float | ndarray]: Default metrics.
@@ -228,7 +231,7 @@ def mean_fscore(results,
         nan_to_num (int, optional): If specified, NaN values will be replaced
             by the numbers defined by the user. Default: None.
         label_map (dict): Mapping old labels to new labels. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. Default: False.
+        reduce_zero_label (bool): Wether ignore zero label. Default: False.
         beta (int): Determines the weight of recall in the combined score.
             Default: False.
 
@@ -266,89 +269,15 @@ def eval_metrics(results,
     Args:
         results (list[ndarray] | list[str]): List of prediction segmentation
             maps or list of prediction result filenames.
-        gt_seg_maps (list[ndarray] | list[str] | Iterables): list of ground
-            truth segmentation maps or list of label filenames.
+        gt_seg_maps (list[ndarray] | list[str]): list of ground truth
+            segmentation maps or list of label filenames.
         num_classes (int): Number of categories.
         ignore_index (int): Index that will be ignored in evaluation.
         metrics (list[str] | str): Metrics to be evaluated, 'mIoU' and 'mDice'.
         nan_to_num (int, optional): If specified, NaN values will be replaced
             by the numbers defined by the user. Default: None.
         label_map (dict): Mapping old labels to new labels. Default: dict().
-        reduce_zero_label (bool): Whether ignore zero label. Default: False.
-     Returns:
-        float: Overall accuracy on all images.
-        ndarray: Per category accuracy, shape (num_classes, ).
-        ndarray: Per category evaluation metrics, shape (num_classes, ).
-    """
-
-    total_area_intersect, total_area_union, total_area_pred_label, \
-        total_area_label = total_intersect_and_union(
-            results, gt_seg_maps, num_classes, ignore_index, label_map,
-            reduce_zero_label)
-    ret_metrics = total_area_to_metrics(total_area_intersect, total_area_union,
-                                        total_area_pred_label,
-                                        total_area_label, metrics, nan_to_num,
-                                        beta)
-
-    return ret_metrics
-
-
-def pre_eval_to_metrics(pre_eval_results,
-                        metrics=['mIoU'],
-                        nan_to_num=None,
-                        beta=1):
-    """Convert pre-eval results to metrics.
-
-    Args:
-        pre_eval_results (list[tuple[torch.Tensor]]): per image eval results
-            for computing evaluation metric
-        metrics (list[str] | str): Metrics to be evaluated, 'mIoU' and 'mDice'.
-        nan_to_num (int, optional): If specified, NaN values will be replaced
-            by the numbers defined by the user. Default: None.
-     Returns:
-        float: Overall accuracy on all images.
-        ndarray: Per category accuracy, shape (num_classes, ).
-        ndarray: Per category evaluation metrics, shape (num_classes, ).
-    """
-
-    # convert list of tuples to tuple of lists, e.g.
-    # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to
-    # ([A_1, ..., A_n], ..., [D_1, ..., D_n])
-    pre_eval_results = tuple(zip(*pre_eval_results))
-    assert len(pre_eval_results) == 4
-
-    total_area_intersect = sum(pre_eval_results[0])
-    total_area_union = sum(pre_eval_results[1])
-    total_area_pred_label = sum(pre_eval_results[2])
-    total_area_label = sum(pre_eval_results[3])
-
-    ret_metrics = total_area_to_metrics(total_area_intersect, total_area_union,
-                                        total_area_pred_label,
-                                        total_area_label, metrics, nan_to_num,
-                                        beta)
-
-    return ret_metrics
-
-
-def total_area_to_metrics(total_area_intersect,
-                          total_area_union,
-                          total_area_pred_label,
-                          total_area_label,
-                          metrics=['mIoU'],
-                          nan_to_num=None,
-                          beta=1):
-    """Calculate evaluation metrics
-    Args:
-        total_area_intersect (ndarray): The intersection of prediction and
-            ground truth histogram on all classes.
-        total_area_union (ndarray): The union of prediction and ground truth
-            histogram on all classes.
-        total_area_pred_label (ndarray): The prediction histogram on all
-            classes.
-        total_area_label (ndarray): The ground truth histogram on all classes.
-        metrics (list[str] | str): Metrics to be evaluated, 'mIoU' and 'mDice'.
-        nan_to_num (int, optional): If specified, NaN values will be replaced
-            by the numbers defined by the user. Default: None.
+        reduce_zero_label (bool): Wether ignore zero label. Default: False.
      Returns:
         float: Overall accuracy on all images.
         ndarray: Per category accuracy, shape (num_classes, ).
@@ -360,6 +289,10 @@ def total_area_to_metrics(total_area_intersect,
     if not set(metrics).issubset(set(allowed_metrics)):
         raise KeyError('metrics {} is not supported'.format(metrics))
 
+    total_area_intersect, total_area_union, total_area_pred_label, \
+        total_area_label = total_intersect_and_union(
+            results, gt_seg_maps, num_classes, ignore_index, label_map,
+            reduce_zero_label)
     all_acc = total_area_intersect.sum() / total_area_label.sum()
     ret_metrics = OrderedDict({'aAcc': all_acc})
     for metric in metrics:

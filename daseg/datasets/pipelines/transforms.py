@@ -892,3 +892,49 @@ class PhotoMetricDistortion(object):
                      f'{self.saturation_upper}), '
                      f'hue_delta={self.hue_delta})')
         return repr_str
+
+@PIPELINES.register_module()
+class ClipNormalize(object):
+    """Normalize the image.
+
+    Added key is "img_norm_cfg".
+
+    Args:
+        mean (sequence): Mean values of 3 channels.
+        std (sequence): Std values of 3 channels.
+        to_rgb (bool): Whether to convert the image from BGR to RGB,
+            default is true.
+    """
+
+    def __init__(self, mean, std, to_rgb=True, axis=None):
+        self.mean = np.array(mean).astype(np.float32)
+        self.std = np.array(std).astype(np.float32)
+        self.to_rgb = to_rgb
+
+    def __call__(self, results):
+        """Call function to normalize images.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Normalized results, 'img_norm_cfg' key is added into
+                result dict.
+        """
+        mean = self.mean.reshape(1, 1, -1)
+        std = self.std.reshape(1, 1, -1)
+        min_value = mean - 2 * std
+        max_value = mean + 2 * std
+
+        img = results['img']
+        img = (img.astype(np.float32) - min_value) / (max_value - min_value)
+        img = np.clip(img, 0, 1)
+
+        if self.to_rgb:
+            img = img[:, :, [2,1,0]]
+
+        results['img'] = img
+
+        return results
+
+

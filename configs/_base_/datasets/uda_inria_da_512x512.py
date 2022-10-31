@@ -10,8 +10,8 @@ crop_size = (512, 512)
 
 source_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', reduce_zero_label=True),
-    dict(type='Resize', img_scale=(512, 512), ratio_range=(0.5, 2.0)),
+    dict(type='LoadAnnotations', reduce_zero_label=False),
+    dict(type='Resize', img_scale=(1024, 1024), ratio_range=(0.5, 2.0)),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
     dict(type='RandomRotate90', prob=1.0),
     dict(type='RandomFlip', flip_ratio=0.5, direction='vertical'),
@@ -31,7 +31,7 @@ target_pipeline = [
          reduce_zero_label=False,
          load_feats=False,
          pseudo_ratio=0.0),
-    dict(type='Resize', img_scale=(928, 928), ratio_range=(0.5, 2.0)),
+    dict(type='Resize', img_scale=(1024, 1024), ratio_range=(0.5, 2.0)),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
     dict(type='RandomRotate90', prob=1.0),
     dict(type='RandomFlip', flip_ratio=0.5, direction='vertical'),
@@ -47,7 +47,7 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(
         type='MultiScaleFlipAug',
-        img_scale=(928, 928),
+        img_scale=(1024, 1024),
         # MultiScaleFlipAug is disabled by not providing img_ratios and
         # setting flip=False
         # img_ratios=[0.5, 0.75, 1.0, 1.25, 1.5, 1.75],
@@ -61,12 +61,13 @@ test_pipeline = [
         ])
 ]
 
-dataset_type = 'ISPRSDataset'
-# data_root_pots = '../data/Dataset4EO/Potsdam_mmlab'
-# data_root_vaih = '../data/Dataset4EO/Vaihingen_mmlab'
-data_root_pots = '../../Datasets/Dataset4EO/Potsdam_mmlab'
-data_root_vaih = '../../Datasets/Dataset4EO/Vaihingen_mmlab'
-gt_seg_map_loader_cfg=dict(reduce_zero_label=True)
+dataset_type = 'EODataset'
+datapipe = 'inria_clipped'
+data_root = '../../Datasets/Dataset4EO/'
+rcs_root = '../../Datasets/Dataset4EO/AerialImageDataset/clip_c1024_s512'
+
+gt_seg_map_loader_cfg=dict(reduce_zero_label=False)
+
 data = dict(
     samples_per_gpu=2,
     workers_per_gpu=4,
@@ -74,30 +75,41 @@ data = dict(
         type='UDADataset',
         source=dict(
             type=dataset_type,
-            data_root=data_root_pots,
-            img_dir='img_dir/train',
-            ann_dir='ann_dir/train',
+            data_root=data_root,
+            rcs_root = rcs_root,
+            datapipe=datapipe,
+            datapipe_cfg=dict(city_names=['austin', 'chicago', 'kitsap']),
+            reduce_zero_label=False,
+            split='train',
             gt_seg_map_loader_cfg=gt_seg_map_loader_cfg,
             pipeline=source_pipeline),
         target=dict(
             type=dataset_type,
-            data_root=data_root_vaih,
-            img_dir='img_dir/train',
-            ann_dir='ann_dir/train',
+            data_root=data_root,
+            datapipe=datapipe,
+            datapipe_cfg=dict(city_names=['vienna', 'tyrol-w']),
+            reduce_zero_label=False,
+            split='train',
             gt_seg_map_loader_cfg=gt_seg_map_loader_cfg,
-            pipeline=target_pipeline)),
+            pipeline=target_pipeline),
+        path2name=True),
     val=dict(
         type=dataset_type,
-        data_root=data_root_vaih,
-        img_dir='img_dir/val',
-        ann_dir='ann_dir/val',
+        data_root=data_root,
+        datapipe=datapipe,
+        # datapipe_cfg=dict(city_names=['austin', 'chicago', 'kitsap']),
+        datapipe_cfg=dict(city_names=['vienna', 'tyrol-w']),
+        reduce_zero_label=False,
+        split='train',
         gt_seg_map_loader_cfg=gt_seg_map_loader_cfg,
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
-        data_root=data_root_vaih,
-        img_dir='img_dir/val',
-        ann_dir='ann_dir/val',
+        data_root=data_root,
+        datapipe=datapipe,
+        datapipe_cfg=dict(city_names=['vienna', 'tyrol-w']),
+        reduce_zero_label=False,
+        split='val',
         gt_seg_map_loader_cfg=gt_seg_map_loader_cfg,
         pipeline=test_pipeline),
     train_dataloader=dict(

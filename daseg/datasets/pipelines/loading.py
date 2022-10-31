@@ -4,6 +4,7 @@ import os.path as osp
 
 import mmcv
 import numpy as np
+import pdb
 
 from ..builder import PIPELINES
 
@@ -121,7 +122,6 @@ class LoadAnnotations(object):
         Returns:
             dict: The dict contains loaded semantic segmentation annotations.
         """
-
         if self.file_client is None:
             self.file_client = mmcv.FileClient(**self.file_client_args)
 
@@ -146,6 +146,143 @@ class LoadAnnotations(object):
             gt_semantic_seg[gt_semantic_seg == 254] = 255
         results['gt_semantic_seg'] = gt_semantic_seg
         results['seg_fields'].append('gt_semantic_seg')
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(reduce_zero_label={self.reduce_zero_label},'
+        repr_str += f"imdecode_backend='{self.imdecode_backend}')"
+        return repr_str
+
+@PIPELINES.register_module()
+class LoadAnnotationsPseudoLabelsV2(object):
+    """Load annotations for semantic segmentation.
+
+    Args:
+        reduce_zero_label (bool): Whether reduce all label value by 1.
+            Usually used for datasets where 0 is background label.
+            Default: False.
+        file_client_args (dict): Arguments to instantiate a FileClient.
+            See :class:`mmcv.fileio.FileClient` for details.
+            Defaults to ``dict(backend='disk')``.
+        imdecode_backend (str): Backend for :func:`mmcv.imdecode`. Default:
+            'pillow'
+    """
+
+    def __init__(self,
+                 pseudo_labels_dir=None,
+                 updated_pseudo_labels_dir=None,
+                 pseudo_ratio=0.5,
+                 load_feats=False,
+                 reduce_zero_label=False,
+                 # file_client_args=dict(backend='disk'),
+                 sim_feat_names=['gaussian_sim_feat_2'],
+                 imdecode_backend='pillow',
+                 filename_mapper_type=None):
+        self.reduce_zero_label = reduce_zero_label
+        # self.file_client_args = file_client_args.copy()
+        self.load_feats = load_feats
+        self.file_client = None
+        self.imdecode_backend = imdecode_backend
+        self.pseudo_labels_dir = pseudo_labels_dir
+        self.pseudo_ratio = pseudo_ratio
+        self.sim_feat_names = sim_feat_names
+        self.updated_pseudo_labels_dir = updated_pseudo_labels_dir
+        self.filename_mapper_type = filename_mapper_type
+
+
+    def filename_mapper(self, filename):
+        if self.filename_mapper_type == 'season_net':
+            return filename.replace('labels', '10m_RGB')
+
+        return filename
+
+    def __call__(self, results):
+        """Call function to load multiple types annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmseg.CustomDataset`.
+
+        Returns:
+            dict: The dict contains loaded semantic segmentation annotations.
+        """
+        # if self.file_client is None:
+        #     self.file_client = mmcv.FileClient(**self.file_client_args)
+
+        # t1 = time.time()
+        if 'ann_info' in results:
+            ann_path = results['ann_info']['seg_map']
+        else:
+            # In pseudo labeling case, names of the image and the pseudo label should match
+            ann_path = results['img_info']['filename']
+
+        if results.get('seg_prefix', None) is not None:
+            filename = osp.join(results['seg_prefix'], ann_path)
+        else:
+            filename = ann_path
+
+        filename = filename.split('/')[-1].split('.')[0]
+        filename = self.filename_mapper(filename)
+
+        if self.pseudo_labels_dir is None:
+            results['gt_semantic_seg'] = np.zeros(results['img_shape']).astype(np.uint8)
+            results['gt_semantic_seg'].fill(255)
+            results['seg_fields'].append('gt_semantic_seg')
+
+            return results
+
+        file_path = osp.join(self.pseudo_labels_dir, filename + '.h5')
+        if self.updated_pseudo_labels_dir is not None:
+            updated_file_path = osp.join(self.updated_pseudo_labels_dir, filename + '.h5')
+            if osp.exists(updated_file_path):
+                file_path = updated_file_path
+
+
+        with h5py.File(file_path, 'r') as f:
+            logits = np.array(f['seg_logits'])
+            thres = np.array(f[f'thre@{self.pseudo_ratio}'])
+
+
+            preds = logits.argmax(axis=0)
+            probs = np.exp(logits) / np.exp(logits).sum(axis=0)
+            ent_map = - (probs * np.log(probs + 1e-8)).sum(axis=0)
+            thre_map = thres[preds]
+            mask = ent_map < thre_map
+
+            pse_labels = np.where(mask, preds, 255)
+
+            if self.reduce_zero_label:
+                # avoid using underflow conversion
+                pse_labels[pse_labels == 0] = 255
+                pse_labels = pse_labels - 1
+                pse_labels[pse_labels == 254] = 255
+
+            results['gt_semantic_seg'] = pse_labels.astype(np.uint8)
+            results['seg_fields'].append('gt_semantic_seg')
+
+            if self.load_feats:
+                gaussian_feats = []
+                cosine_feats = []
+
+                for name in self.sim_feat_names:
+                    results[name] = np.array(f[name])
+                    # results[name] = np.zeros((9, 128, 128))
+
+                # for level in range(4):
+                #     gaussian_feat = np.array(f[f'gaussian_sim_feat_{level}'])
+                #     # gaussian_feats.append(gaussian_feat)
+
+                #     cosine_feat = np.array(f[f'cosine_sim_feat_{level}'])
+                #     # cosine_feats.append(cosine_feat)
+
+                #     results[f'gaussian_sim_feat_{level}'] = gaussian_feat
+                #     results[f'cosine_sim_feat_{level}'] = cosine_feat
+
+            f.close()
+
+        # t2 = time.time()
+        # print('loading time: {}'.format(t2-t1))
+
         return results
 
     def __repr__(self):

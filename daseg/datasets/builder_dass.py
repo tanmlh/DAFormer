@@ -1,17 +1,20 @@
-# Obtained from: https://github.com/open-mmlab/dasegmentation/tree/v0.16.0
-# Modifications:
-# - Support UDADataset
-
+# Copyright (c) OpenMMLab. All rights reserved.
 import copy
 import platform
 import random
 from functools import partial
+import pdb
 
 import numpy as np
 import torch
 from mmcv.parallel import collate
 from mmcv.runner import get_dist_info
-from mmcv.utils import Registry, build_from_cfg
+from mmcv.utils import Registry, build_from_cfg, digit_version
+# from torchdata.dataloader2 import DataLoader2 as DataLoader
+# from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader2 as DataLoader
+
+# from .samplers import DistributedSampler
 from torch.utils.data import DataLoader, DistributedSampler
 
 if platform.system() != 'Windows':
@@ -33,6 +36,8 @@ def _concat_dataset(cfg, default_args=None):
     img_dir = cfg['img_dir']
     ann_dir = cfg.get('ann_dir', None)
     split = cfg.get('split', None)
+    # pop 'separate_eval' since it is not a valid key for common datasets.
+    separate_eval = cfg.pop('separate_eval', True)
     num_img_dir = len(img_dir) if isinstance(img_dir, (list, tuple)) else 1
     if ann_dir is not None:
         num_ann_dir = len(ann_dir) if isinstance(ann_dir, (list, tuple)) else 1
@@ -60,25 +65,20 @@ def _concat_dataset(cfg, default_args=None):
             data_cfg['split'] = split[i]
         datasets.append(build_dataset(data_cfg, default_args))
 
-    return ConcatDataset(datasets)
+    return ConcatDataset(datasets, separate_eval)
 
 
 def build_dataset(cfg, default_args=None):
     """Build datasets."""
-    from .dataset_wrappers import ConcatDataset, RepeatDataset
-    from daseg.datasets import UDADataset
-    if cfg['type'] == 'UDADataset':
-        dataset = UDADataset(
-            source=build_dataset(cfg['source'], default_args),
-            target=build_dataset(cfg['target'], default_args),
-            cfg=cfg)
-    elif isinstance(cfg, (list, tuple)):
+    from .dataset_wrappers import (ConcatDataset, MultiImageMixDataset,
+                                   RepeatDataset, MultiDomainDataset)
+    if isinstance(cfg, (list, tuple)):
         dataset = ConcatDataset([build_dataset(c, default_args) for c in cfg])
-    elif cfg['type'] == 'RepeatDataset':
-        dataset = RepeatDataset(
-            build_dataset(cfg['dataset'], default_args), cfg['times'])
-    elif isinstance(cfg.get('img_dir'), (list, tuple)) or isinstance(
-            cfg.get('split', None), (list, tuple)):
+    elif cfg['type'] == 'MultiDomainDataset':
+        dataset = MultiDomainDataset([build_dataset(c, default_args) for c in cfg['cfgs']])
+    # elif isinstance(cfg.get('img_dir'), (list, tuple)) or isinstance(
+    #         cfg.get('split', None), (list, tuple)):
+    elif isinstance(cfg.get('img_dir'), (list, tuple)):
         dataset = _concat_dataset(cfg, default_args)
     else:
         dataset = build_from_cfg(cfg, DATASETS, default_args)
@@ -93,15 +93,13 @@ def build_dataloader(dataset,
                      dist=True,
                      shuffle=True,
                      seed=None,
-                     drop_last=False,
+                     drop_last=True,
                      pin_memory=True,
-                     persistent_workers=False,
+                     persistent_workers=True,
                      **kwargs):
     """Build PyTorch DataLoader.
-
     In distributed training, each GPU/process has a dataloader.
     In non-distributed training, there is only one dataloader for all GPUs.
-
     Args:
         dataset (Dataset): A PyTorch dataset.
         samples_per_gpu (int): Number of training samples on each GPU, i.e.,
@@ -123,14 +121,14 @@ def build_dataloader(dataset,
             The argument also has effect in PyTorch>=1.7.0.
             Default: True
         kwargs: any keyword argument to be used to initialize DataLoader
-
     Returns:
         DataLoader: A PyTorch dataloader.
     """
+    # drop_last = False
     rank, world_size = get_dist_info()
     if dist:
         sampler = DistributedSampler(
-            dataset, world_size, rank, shuffle=shuffle)
+            dataset, world_size, rank, shuffle=shuffle, seed=seed)
         shuffle = False
         batch_size = samples_per_gpu
         num_workers = workers_per_gpu
@@ -143,7 +141,7 @@ def build_dataloader(dataset,
         worker_init_fn, num_workers=num_workers, rank=rank,
         seed=seed) if seed is not None else None
 
-    if torch.__version__ >= '1.8.0':
+    if digit_version(torch.__version__) >= digit_version('1.8.0'):
         data_loader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -174,9 +172,7 @@ def build_dataloader(dataset,
 
 def worker_init_fn(worker_id, num_workers, rank, seed):
     """Worker init func for dataloader.
-
     The seed of each worker equals to num_worker * rank + worker_id + user_seed
-
     Args:
         worker_id (int): Worker id.
         num_workers (int): Number of workers.
@@ -187,3 +183,4 @@ def worker_init_fn(worker_id, num_workers, rank, seed):
     worker_seed = num_workers * rank + worker_id + seed
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+    torch.manual_seed(worker_seed)

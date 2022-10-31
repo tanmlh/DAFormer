@@ -19,7 +19,7 @@ _base_ = [
 # Random Seed
 seed = 0
 
-model = dict(decode_head=dict(num_classes=6))
+model = dict(decode_head=dict(num_classes=33))
 
 # Modifications to Basic UDA
 uda = dict(
